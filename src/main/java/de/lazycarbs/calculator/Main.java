@@ -6,10 +6,12 @@ import de.lazycarbs.calculator.core.MethodCalculationSelector;
 import de.lazycarbs.calculator.data.IntermediateBolusFactors;
 import de.lazycarbs.calculator.data.MethodResults;
 import de.lazycarbs.calculator.data.MethodSelectionResult;
+import de.lazycarbs.calculator.database.DatabaseManager;
 import de.lazycarbs.calculator.input.InputHandler;
 import de.lazycarbs.calculator.methodstrategy.CalculationStrategy;
 import de.lazycarbs.calculator.output.OutputHandler;
 import de.lazycarbs.calculator.util.BolusFactorCalculator;
+import java.sql.SQLException;
 
 public class Main {
     public static void main(String[] args) {
@@ -19,6 +21,20 @@ public class Main {
         MethodCalculationSelector methodCalculationSelector = new MethodCalculationSelector();
         FinalBolusCalculator finalBolusCalculator = new FinalBolusCalculator();
         BolusFactorCalculator bolusFactorCalculator = new BolusFactorCalculator();
+
+        // Das Passwort wird aus einer Umgebungsvariable gelesen
+        String dbPassword = System.getenv("DB_PASSWORD");
+        if (dbPassword == null || dbPassword.isEmpty()) {
+            outputHandler.displayMessage("FEHLER: Das Datenbankpasswort ist nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt.");
+            outputHandler.displayMessage("Bitte setze die Umgebungsvariable, z.B. 'export DB_PASSWORD=\"dein_passwort\"' im Terminal.");
+            return; // Programm beenden, da das Passwort fehlt
+        }
+
+        DatabaseManager databaseManager = new DatabaseManager(
+                "jdbc:mysql://localhost:3306/lazycarbs_db",
+                "lazyuser",
+                dbPassword // Passwort aus Umgebungsvariable verwenden
+        );
 
         outputHandler.displayLazyCarbs();
 
@@ -57,6 +73,35 @@ public class Main {
         double finalCorrectBolus = finalBolusCalculator.correctBolusSumAdjustment(methodResults, movementFactor);
 
         outputHandler.displayResult("Korrekter Sofort-Bolus (angepasst an Bewegungs-Faktor): ", finalCorrectBolus);
+
+
+// NEU: Daten in der Datenbank speichern
+        try {
+            databaseManager.saveCalculation(
+                    mealCarbs, mealCalories, usualBeCalories, insulinTypeCalorieCovering,
+                    currentHour, currentMinute, usualBolusFactor,
+                    intermediateBolusFactors,
+                    selectedStrategy.getClass().getSimpleName(), methodSelection.explanation(),
+                    methodResults,
+                    movementFactor, finalCorrectBolus
+            );
+            outputHandler.displayMessage("\nBerechnungsdaten erfolgreich in der Datenbank gespeichert.");
+        } catch (SQLException e) {
+            outputHandler.displayMessage("\nFehler beim Speichern der Daten in der Datenbank: " + e.getMessage());
+            System.err.println("SQL-Fehler: " + e.getMessage()); // Für detailliertere Fehlermeldung in der Konsole
+
+        } finally {
+            // Sicherstellen, dass die Datenbankverbindung geschlossen wird
+            try {
+                databaseManager.closeConnection();
+            } catch (SQLException e) {
+                outputHandler.displayMessage("Fehler beim Schließen der Datenbankverbindung: " + e.getMessage());
+                System.err.println("SQL-Fehler beim Schließen der Verbindung: " + e.getMessage()); // Für detailliertere Fehlermeldung
+
+            }
+        }
+
+        outputHandler.displayMessage("\nBerechnung abgeschlossen. Vielen Dank!");
 
     }
 }
