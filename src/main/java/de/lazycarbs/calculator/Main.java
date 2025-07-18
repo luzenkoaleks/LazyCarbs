@@ -22,23 +22,47 @@ public class Main {
         FinalBolusCalculator finalBolusCalculator = new FinalBolusCalculator();
         BolusFactorCalculator bolusFactorCalculator = new BolusFactorCalculator();
 
-        // Das Passwort wird aus einer Umgebungsvariable gelesen
-        String dbPassword = System.getenv("DB_PASSWORD");
-        if (dbPassword == null || dbPassword.isEmpty()) {
-            outputHandler.displayMessage("FEHLER: Das Datenbankpasswort ist nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt.");
-            outputHandler.displayMessage("Bitte setze die Umgebungsvariable, z.B. 'export DB_PASSWORD=\"dein_passwort\"' im Terminal.");
-            return; // Programm beenden, da das Passwort fehlt
+        // --- Start: Logik für optionales Datenbank-Speichern ---
+        boolean enableDatabaseStorage = true; // Standardmäßig ist die Speicherung aktiviert
+        for (String arg : args) {
+            if ("--no-db".equalsIgnoreCase(arg)) {
+                enableDatabaseStorage = false;
+                break;
+            }
         }
 
-        DatabaseManager databaseManager = new DatabaseManager(
-                "jdbc:mysql://localhost:3306/lazycarbs_db",
-                "lazyuser",
-                dbPassword // Passwort aus Umgebungsvariable verwenden
-        );
+        DatabaseManager databaseManager = null; // Initialisiere als null
+        boolean databaseManagerInitialized = false; // Flag, um zu verfolgen, ob DatabaseManager erfolgreich erstellt wurde
+
+        if (enableDatabaseStorage) {
+            // Das Passwort wird aus einer Umgebungsvariable gelesen (Run/Debug Configurations)
+            String dbPassword = System.getenv("DB_PASSWORD");
+            if (dbPassword == null || dbPassword.isEmpty()) {
+                outputHandler.displayMessage("FEHLER: Das Datenbankpasswort ist nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt.");
+                outputHandler.displayMessage("Bitte setze die Umgebungsvariable, z.B. 'export DB_PASSWORD=\"dein_passwort\"' im Terminal.");
+                outputHandler.displayMessage("Das Programm wird ohne Datenbank-Speicherung fortgesetzt.");
+            } else {
+                try {
+                    databaseManager = new DatabaseManager(
+                            "jdbc:mysql://localhost:3306/lazycarbs_db",
+                            "lazyuser",
+                            dbPassword
+                    );
+                    databaseManagerInitialized = true; // Flag setzen, wenn Initialisierung erfolgreich war
+                } catch (Exception e) { // Fange jede Exception während der DatabaseManager-Erstellung ab
+                    outputHandler.displayMessage("FEHLER: Konnte DatabaseManager nicht initialisieren: " + e.getMessage());
+                    System.err.println("Detaillierter Fehler bei DatabaseManager-Initialisierung: " + e.getMessage());
+                    outputHandler.displayMessage("Das Programm wird ohne Datenbank-Speicherung fortgesetzt.");
+                }
+            }
+        } else {
+                outputHandler.displayMessage("\nDas Programm wird ohne Datenbank-Speicherung ausgeführt (--no-db Option).");
+            }
+        // --- Ende: Logik für optionales Datenbank-Speichern und Passwort-Prüfung ---
 
         outputHandler.displayLazyCarbs();
 
-        // User eingabe der Werte für:
+        // User Eingabe der Werte für:
         // double mealCarbs, double mealCalories, double usualBolusFactor, double usualBeCalories
         double mealCarbs = inputHandler.readDouble("Enter the Carbs of your meal: ");
         double mealCalories = inputHandler.readDouble("Enter the Calories of your meal: ");
@@ -75,7 +99,9 @@ public class Main {
         outputHandler.displayResult("Korrekter Sofort-Bolus (angepasst an Bewegungs-Faktor): ", finalCorrectBolus);
 
 
-// NEU: Daten in der Datenbank speichern
+
+        // Daten in der Datenbank speichern - NUR wenn databaseManager erfolgreich initialisiert wurde
+        if (databaseManagerInitialized) { // Verwende das Flag, um zu prüfen, ob die DB zur Verwendung bereit ist
         try {
             databaseManager.saveCalculation(
                     mealCarbs, mealCalories, usualBeCalories, insulinTypeCalorieCovering,
@@ -88,17 +114,19 @@ public class Main {
             outputHandler.displayMessage("\nBerechnungsdaten erfolgreich in der Datenbank gespeichert.");
         } catch (SQLException e) {
             outputHandler.displayMessage("\nFehler beim Speichern der Daten in der Datenbank: " + e.getMessage());
-            System.err.println("SQL-Fehler: " + e.getMessage()); // Für detailliertere Fehlermeldung in der Konsole
+            System.err.println("SQL-Fehler: " + e.getMessage()); // Für detaillierte Fehlermeldung in der Konsole
 
         } finally {
             // Sicherstellen, dass die Datenbankverbindung geschlossen wird
             try {
-                databaseManager.closeConnection();
+                if (databaseManager != null) { // Prüfen, ob databaseManager initialisiert wurde
+                    databaseManager.closeConnection();
+                }
             } catch (SQLException e) {
                 outputHandler.displayMessage("Fehler beim Schließen der Datenbankverbindung: " + e.getMessage());
-                System.err.println("SQL-Fehler beim Schließen der Verbindung: " + e.getMessage()); // Für detailliertere Fehlermeldung
-
+                System.err.println("Detaillierter Fehler beim Schließen der Verbindung: " + e.getMessage());
             }
+        }
         }
 
         outputHandler.displayMessage("\nBerechnung abgeschlossen. Vielen Dank!");
