@@ -22,4 +22,49 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version> <!-- Aktuelle Version des Plugins verwenden -->
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <!-- Hier gibst du den voll qualifizierten Namen deiner Hauptklasse an -->
+                            <!-- Das ist die Klasse mit der public static void main(String[] args) Methode -->
+                            <mainClass>de.lazycarbs.calculator.Main</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <!-- Wenn du bereits andere Plugins im Build-Bereich hast, behalte sie bei -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.6.0</version> <!-- Aktuelle stabile Version -->
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>de.lazycarbs.calculator.Main</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <!-- Dies ist der Schlüssel: Erstellt eine JAR mit allen Abhängigkeiten -->
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id> <!-- Dies ist ein Bezeichner für die Ausführung -->
+                        <phase>package</phase> <!-- Wird während der 'package'-Phase ausgeführt -->
+                        <goals>
+                            <goal>single</goal> <!-- Erstellt eine einzelne, ausführbare JAR -->
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
