@@ -4,62 +4,88 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>de.aleks</groupId>
+    <groupId>de.lazycarbs.calculator</groupId>
     <artifactId>LazyCarbsCalculator</artifactId>
     <version>1.0-SNAPSHOT</version>
 
+    <!-- Spring Boot Parent-POM für Dependency Management und Plugin-Konfiguration -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.2</version> <!-- Aktuelle stabile Spring Boot Version -->
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Explizite Überschreibung von transitiven Abhängigkeiten zur Behebung von CVEs -->
+        <logback.version>1.5.13</logback.version>
+        <tomcat.version>10.1.35</tomcat.version> <!-- Aktualisiert auf die neueste 10.1.x Patch-Version -->
+        <spring-framework.version>6.1.14</spring-framework.version> <!-- Aktualisiert auf die neueste 6.1.x Patch-Version -->
+        <json-smart.version>2.5.2</json-smart.version>
+        <xmlunit.version>2.10.0</xmlunit.version>
+        <mysql-connector-j.version>8.2.0</mysql-connector-j.version>
     </properties>
 
     <dependencies>
+        <!-- Spring Boot Web Starter für REST-APIs und eingebetteten Tomcat -->
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.33</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <!-- MySQL JDBC Treiber -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>${mysql-connector-j.version}</version>
+        </dependency>
+
+        <!-- Spring Boot Test Starter (für Tests, falls du welche hast) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <!-- Schließe die anfällige xmlunit-core Version aus, die transitiv gezogen wird -->
+                <exclusion>
+                    <groupId>org.xmlunit</groupId>
+                    <artifactId>xmlunit-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Direkte Abhängigkeit für xmlunit-core mit der gepatchten Version hinzufügen -->
+        <!-- Dies stellt sicher, dass die korrekte Version für Testzwecke verwendet wird -->
+        <dependency>
+            <groupId>org.xmlunit</groupId>
+            <artifactId>xmlunit-core</artifactId>
+            <version>${xmlunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Deine bestehenden Abhängigkeiten für die Kernlogik, falls sie nicht schon durch Spring Boot abgedeckt sind -->
+        <!-- Beispiel: Wenn du spezielle Bibliotheken für deine Berechnungen hast, die nicht Teil von Java Standard sind -->
+        <!-- <dependency>
+            <groupId>...</groupId>
+            <artifactId>...</artifactId>
+            <version>...</version>
+        </dependency> -->
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Spring Boot Maven Plugin zum Erstellen einer ausführbaren JAR -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.2</version> <!-- Aktuelle Version des Plugins verwenden -->
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <!-- Hier gibst du den voll qualifizierten Namen deiner Hauptklasse an -->
-                            <!-- Das ist die Klasse mit der public static void main(String[] args) Methode -->
-                            <mainClass>de.lazycarbs.calculator.Main</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
-            </plugin>
-            <!-- Wenn du bereits andere Plugins im Build-Bereich hast, behalte sie bei -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.6.0</version> <!-- Aktuelle stabile Version -->
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>de.lazycarbs.calculator.Main</mainClass>
-                        </manifest>
-                    </archive>
-                    <descriptorRefs>
-                        <!-- Dies ist der Schlüssel: Erstellt eine JAR mit allen Abhängigkeiten -->
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${project.parent.version}</version> <!-- Verwendet die Version aus dem Parent-POM -->
                 <executions>
                     <execution>
-                        <id>make-assembly</id> <!-- Dies ist ein Bezeichner für die Ausführung -->
-                        <phase>package</phase> <!-- Wird während der 'package'-Phase ausgeführt -->
                         <goals>
-                            <goal>single</goal> <!-- Erstellt eine einzelne, ausführbare JAR -->
+                            <goal>repackage</goal>
                         </goals>
                     </execution>
                 </executions>
