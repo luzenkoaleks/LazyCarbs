@@ -21,12 +21,13 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Explizite Überschreibung von transitiven Abhängigkeiten zur Behebung von CVEs -->
-        <!-- logback.version wurde entfernt, um Versionskonflikte mit Spring Boot zu vermeiden -->
         <tomcat.version>10.1.35</tomcat.version> <!-- Aktualisiert auf die neueste 10.1.x Patch-Version -->
         <spring-framework.version>6.1.14</spring-framework.version> <!-- Aktualisiert auf die neueste 6.1.x Patch-Version -->
         <json-smart.version>2.5.2</json-smart.version>
         <xmlunit.version>2.10.0</xmlunit.version>
         <mysql-connector-j.version>8.2.0</mysql-connector-j.version>
+        <!-- Logback-Version für direkte Abhängigkeit -->
+        <logback.version>1.5.13</logback.version>
     </properties>
 
     <dependencies>
@@ -34,7 +35,33 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+            <exclusions>
+                <!-- NEU: Gesamten Spring Boot Logging Starter ausschließen -->
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
+
+        <!-- Direkte Logback-Abhängigkeiten mit der gepatchten Version hinzufügen -->
+        <!-- Diese werden jetzt explizit hinzugefügt, da der Spring Boot Logging Starter ausgeschlossen wurde -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-core</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version> <!-- Stelle sicher, dass dies eine kompatible Version ist -->
+        </dependency>
+
 
         <!-- MySQL JDBC Treiber -->
         <dependency>
@@ -53,6 +80,15 @@
                 <exclusion>
                     <groupId>org.xmlunit</groupId>
                     <artifactId>xmlunit-core</artifactId>
+                </exclusion>
+                <!-- NEU: Logback-Abhängigkeiten auch aus dem Test-Starter ausschließen, falls vorhanden -->
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-classic</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-core</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>

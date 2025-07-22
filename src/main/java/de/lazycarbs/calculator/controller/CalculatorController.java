@@ -1,3 +1,4 @@
+// src/main/java/de/lazycarbs/calculator/controller/CalculatorController.java
 package de.lazycarbs.calculator.controller;
 
 import de.lazycarbs.calculator.core.FinalBolusCalculator;
@@ -8,51 +9,57 @@ import de.lazycarbs.calculator.data.MethodResults;
 import de.lazycarbs.calculator.data.MethodSelectionResult;
 import de.lazycarbs.calculator.database.DatabaseManager;
 import de.lazycarbs.calculator.util.BolusFactorCalculator;
+import de.lazycarbs.calculator.data.HourlyBolusFactor; // NEU: Import für HourlyBolusFactor
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger; // NEU: Import für Logger
+import org.slf4j.LoggerFactory; // NEU: Import für LoggerFactory
 
 import java.sql.SQLException;
+import java.util.List; // NEU: Import für List
 
 /**
  * REST-Controller für den LazyCarbs Rechner.
- * Stellt Endpunkte für die Berechnung und optionale Datenspeicherung bereit.
+ * Stellt Endpunkte für die Berechnung und optionale Datenspeicherung bereit,
+ * sowie Endpunkte zur Verwaltung der stündlichen Bolusfaktoren.
  */
 @RestController
-@RequestMapping("/api/calculate")
+@RequestMapping("/api") // Basis-Pfad für alle Endpunkte in diesem Controller
 @CrossOrigin(origins = "http://localhost:5173") // CORS-Konfiguration
 public class CalculatorController {
+
+    private static final Logger logger = LoggerFactory.getLogger(CalculatorController.class); // NEU: Logger Instanz
 
     private final IntermediateFactorCalculator intermediateFactorCalculator;
     private final MethodCalculationSelector methodCalculationSelector;
     private final FinalBolusCalculator finalBolusCalculator;
     private final BolusFactorCalculator bolusFactorCalculator;
-
-    // Der DatabaseManager wird nicht mehr im Konstruktor initialisiert,
-    // sondern bedingt in der calculateBolus-Methode, basierend auf der Anfrage.
-    // Die Umgebungsvariable DB_PASSWORD wird bei Bedarf direkt dort geprüft.
+    private final DatabaseManager databaseManager; // NEU: DatabaseManager als Dependency injizieren
 
     public CalculatorController(IntermediateFactorCalculator intermediateFactorCalculator,
                                 MethodCalculationSelector methodCalculationSelector,
                                 FinalBolusCalculator finalBolusCalculator,
-                                BolusFactorCalculator bolusFactorCalculator) {
+                                BolusFactorCalculator bolusFactorCalculator,
+                                DatabaseManager databaseManager) { // NEU: DatabaseManager im Konstruktor
         this.intermediateFactorCalculator = intermediateFactorCalculator;
         this.methodCalculationSelector = methodCalculationSelector;
         this.finalBolusCalculator = finalBolusCalculator;
         this.bolusFactorCalculator = bolusFactorCalculator;
+        this.databaseManager = databaseManager; // NEU: Zuweisung
     }
 
     /**
      * Verarbeitet POST-Anfragen zur Berechnung des Bolus.
+     * Endpunkt: /api/calculate
      * @param request Das Request-Objekt mit allen Eingabedaten, einschließlich der Option zur Datenbankspeicherung.
      * @return Ein ResponseEntity mit dem Ergebnis der Berechnung und dem HTTP-Status.
      */
-    @PostMapping
+    @PostMapping("/calculate") // Spezifischer Pfad für die Berechnung
     public ResponseEntity<CalculationResponse> calculateBolus(@RequestBody CalculationRequest request) {
-        String dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (nicht angefragt)"; // Standardstatus
+        String dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (nicht angefragt)";
 
         try {
-            // Berechnungen basierend auf der bestehenden Logik
             double usualBolusFactor = bolusFactorCalculator.calculateAverageBolusFactor(request.currentHour(), request.currentMinute(), 120);
 
             IntermediateBolusFactors intermediateBolusFactors = intermediateFactorCalculator.calculateIntermediateBolusFactors(
@@ -61,18 +68,18 @@ public class CalculatorController {
             MethodSelectionResult methodSelection = methodCalculationSelector.selectStrategy(
                     request.mealCarbs(), request.usualBeCalories(), intermediateBolusFactors);
 
-            // Sicherstellen, dass eine Strategie ausgewählt wurde
             if (methodSelection.strategy() == null) {
+                logger.error("Keine Berechnungsmethode ausgewählt: {}", methodSelection.explanation()); // Logging
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(new CalculationResponse(
-                                0.0, 0.0, 0.0, 0.0, 0, 0, // mealCarbs, mealCalories, usualBeCalories, insulinTypeCalorieCovering, currentHour, currentMinute
-                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // usualBolusFactor, intermediateLeanBeFactor, pureCarbBeFactor, beSum, beCalories, fatProteinCalories
-                                0.0, 0.0, 0.0, 0.0, 0.0, // methodCorrectBeFactor, calorieSurplus, delayedCalorieBolus, correctBolusSum, fatProteinCalories
-                                0.0, 0.0, // movementFactor, finalCorrectBolus
-                                "N/A", // selectedMethodName
-                                "N/A", // methodExplanation
-                                "Fehler: " + methodSelection.explanation(), // statusMessage
-                                "N/A" // dbStatus
+                                0.0, 0.0, 0.0, 0.0, 0, 0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0,
+                                "N/A",
+                                "N/A",
+                                "Fehler: " + methodSelection.explanation(),
+                                "N/A"
                         ));
             }
 
@@ -82,20 +89,13 @@ public class CalculatorController {
 
             double finalCorrectBolus = finalBolusCalculator.correctBolusSumAdjustment(methodResults, request.movementFactor());
 
-            // NEU: Daten in der Datenbank speichern, WENN vom Frontend angefordert UND DB initialisierbar ist
-            if (request.enableDatabaseStorage()) { // Prüfe den neuen Request-Parameter
+            if (request.enableDatabaseStorage()) {
                 String dbPassword = System.getenv("DB_PASSWORD");
                 if (dbPassword == null || dbPassword.isEmpty()) {
-                    System.err.println("WARNUNG: Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Speicherung konnte nicht durchgeführt werden.");
+                    logger.warn("Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Speicherung konnte nicht durchgeführt werden."); // Logging
                     dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (Passwort fehlt)";
                 } else {
-                    DatabaseManager databaseManager = null; // Lokale Instanz
                     try {
-                        databaseManager = new DatabaseManager(
-                                "jdbc:mysql://localhost:3306/lazycarbs_db",
-                                "lazyuser",
-                                dbPassword
-                        );
                         databaseManager.saveCalculation(
                                 request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
                                 request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
@@ -104,29 +104,20 @@ public class CalculatorController {
                                 methodResults,
                                 request.movementFactor(), finalCorrectBolus
                         );
-                        System.out.println("Berechnungsdaten erfolgreich in der Datenbank gespeichert.");
+                        logger.info("Berechnungsdaten erfolgreich in der Datenbank gespeichert."); // Logging
                         dbStatusMessage = "Datenbank-Speicherung: Erfolgreich";
                     } catch (SQLException e) {
-                        System.err.println("Fehler beim Speichern der Daten in der Datenbank: " + e.getMessage());
+                        logger.error("Fehler beim Speichern der Daten in der Datenbank: {}", e.getMessage(), e); // Logging mit Exception
                         dbStatusMessage = "Datenbank-Speicherung: Fehler (" + e.getMessage() + ")";
-                    } catch (Exception e) { // Auch andere Initialisierungsfehler abfangen
-                        System.err.println("Fehler bei der Datenbank-Initialisierung: " + e.getMessage());
+                    } catch (Exception e) {
+                        logger.error("Fehler bei der Datenbank-Initialisierung (während Speichern): {}", e.getMessage(), e); // Logging mit Exception
                         dbStatusMessage = "Datenbank-Speicherung: Fehler bei Initialisierung (" + e.getMessage() + ")";
-                    } finally {
-                        try {
-                            if (databaseManager != null) {
-                                databaseManager.closeConnection(); // Verbindung nach jeder Speicherung schließen
-                            }
-                        } catch (SQLException e) {
-                            System.err.println("Fehler beim Schließen der Datenbankverbindung: " + e.getMessage());
-                        }
                     }
                 }
             } else {
                 dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (vom Benutzer)";
             }
 
-            // Erstelle die Antwort mit allen relevanten Werten
             CalculationResponse response = new CalculationResponse(
                     request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
                     request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
@@ -141,24 +132,61 @@ public class CalculatorController {
                     methodSelection.strategy().getClass().getSimpleName(),
                     methodSelection.explanation(),
                     "Berechnung erfolgreich durchgeführt.",
-                    dbStatusMessage // Verwende die aktualisierte Statusnachricht
+                    dbStatusMessage
             );
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            System.err.println("Fehler bei der Bolus-Berechnung: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Fehler bei der Bolus-Berechnung: {}", e.getMessage(), e); // Logging mit Exception
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new CalculationResponse(
-                            0.0, 0.0, 0.0, 0.0, 0, 0, // mealCarbs, mealCalories, usualBeCalories, insulinTypeCalorieCovering, currentHour, currentMinute
-                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // usualBolusFactor, intermediateLeanBeFactor, pureCarbBeFactor, beSum, beCalories, fatProteinCalories
-                            0.0, 0.0, 0.0, 0.0, 0.0, // methodCorrectBeFactor, calorieSurplus, delayedCalorieBolus, correctBolusSum, fatProteinCalories
-                            0.0, 0.0, // movementFactor, finalCorrectBolus
-                            "N/A", // selectedMethodName
-                            "N/A", // methodExplanation
-                            "Fehler bei der Berechnung: " + e.getMessage(), // statusMessage
-                            dbStatusMessage // Auch hier den dbStatusMessage verwenden
+                            0.0, 0.0, 0.0, 0.0, 0, 0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0,
+                            "N/A",
+                            "N/A",
+                            "Fehler bei der Berechnung: " + e.getMessage(),
+                            dbStatusMessage
                     ));
+        }
+    }
+
+    @GetMapping("/bolus-factors")
+    public ResponseEntity<List<HourlyBolusFactor>> getAllHourlyBolusFactors() {
+        try {
+            List<HourlyBolusFactor> factors = databaseManager.getAllHourlyBolusFactors();
+            return ResponseEntity.ok(factors);
+        } catch (SQLException e) {
+            logger.error("Fehler beim Abrufen der stündlichen Bolusfaktoren: {}", e.getMessage(), e); // Logging
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PutMapping("/bolus-factors/{hour}")
+    public ResponseEntity<String> updateHourlyBolusFactor(
+            @PathVariable int hour,
+            @RequestBody HourlyBolusFactor factor) {
+        if (hour != factor.hour()) {
+            logger.warn("Stunde im Pfad ({}) und im Body ({}) stimmen nicht überein.", hour, factor.hour()); // Logging
+            return ResponseEntity.badRequest().body("Stunde im Pfad und im Body stimmen nicht überein.");
+        }
+        if (hour < 0 || hour > 23) {
+            logger.warn("Ungültige Stunde ({}) für Update-Anfrage.", hour); // Logging
+            return ResponseEntity.badRequest().body("Stunde muss zwischen 0 und 23 liegen.");
+        }
+        if (factor.bolusFactor() <= 0) {
+            logger.warn("Ungültiger Bolusfaktor ({}) für Stunde {}. Muss positiv sein.", factor.bolusFactor(), hour); // Logging
+            return ResponseEntity.badRequest().body("Bolusfaktor muss positiv sein.");
+        }
+
+        try {
+            databaseManager.updateHourlyBolusFactor(hour, factor.bolusFactor());
+            logger.info("Bolusfaktor für Stunde {} erfolgreich aktualisiert auf {}.", hour, factor.bolusFactor()); // Logging
+            return ResponseEntity.ok("Bolusfaktor für Stunde " + hour + " erfolgreich aktualisiert.");
+        } catch (SQLException e) {
+            logger.error("Fehler beim Aktualisieren des Bolusfaktors für Stunde {}: {}", hour, e.getMessage(), e); // Logging
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Fehler beim Aktualisieren des Bolusfaktors.");
         }
     }
 }
