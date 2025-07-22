@@ -12,7 +12,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.2</version> <!-- Aktuelle stabile Spring Boot Version -->
+        <version>3.3.4</version> <!-- Aktuelle stabile Spring Boot Version -->
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -21,7 +21,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Explizite Überschreibung von transitiven Abhängigkeiten zur Behebung von CVEs -->
-        <logback.version>1.5.13</logback.version>
+        <!-- logback.version wurde entfernt, um Versionskonflikte mit Spring Boot zu vermeiden -->
         <tomcat.version>10.1.35</tomcat.version> <!-- Aktualisiert auf die neueste 10.1.x Patch-Version -->
         <spring-framework.version>6.1.14</spring-framework.version> <!-- Aktualisiert auf die neueste 6.1.x Patch-Version -->
         <json-smart.version>2.5.2</json-smart.version>
