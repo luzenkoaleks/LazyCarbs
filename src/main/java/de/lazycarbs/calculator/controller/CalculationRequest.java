@@ -1,3 +1,4 @@
+// src/main/java/de/lazycarbs/calculator/controller/CalculationRequest.java
 package de.lazycarbs.calculator.controller;
 
 /**
@@ -11,6 +12,7 @@ package de.lazycarbs.calculator.controller;
  * @param currentHour Aktuelle Stunde der Eingabe (0-23)
  * @param currentMinute Aktuelle Minute der Eingabe (0-59)
  * @param movementFactor Bewegungsfaktor
+ * @param enableDatabaseStorage Gibt an, ob die Berechnung in der Datenbank gespeichert werden soll.
  */
 public record CalculationRequest(
         double mealCarbs,
@@ -19,5 +21,6 @@ public record CalculationRequest(
         double insulinTypeCalorieCovering,
         int currentHour,
         int currentMinute,
-        double movementFactor
+        double movementFactor,
+        boolean enableDatabaseStorage // NEU: Feld für die Datenbank-Speicheroption
 ) {}

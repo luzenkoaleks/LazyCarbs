@@ -20,6 +20,7 @@ import java.sql.SQLException;
  */
 @RestController
 @RequestMapping("/api/calculate")
+@CrossOrigin(origins = "http://localhost:5173") // CORS-Konfiguration
 public class CalculatorController {
 
     private final IntermediateFactorCalculator intermediateFactorCalculator;
@@ -27,9 +28,9 @@ public class CalculatorController {
     private final FinalBolusCalculator finalBolusCalculator;
     private final BolusFactorCalculator bolusFactorCalculator;
 
-    // Optional: DatabaseManager als Feld, wenn er wiederverwendet werden soll
-    private DatabaseManager databaseManager;
-    private boolean databaseManagerInitialized = false;
+    // Der DatabaseManager wird nicht mehr im Konstruktor initialisiert,
+    // sondern bedingt in der calculateBolus-Methode, basierend auf der Anfrage.
+    // Die Umgebungsvariable DB_PASSWORD wird bei Bedarf direkt dort geprüft.
 
     public CalculatorController(IntermediateFactorCalculator intermediateFactorCalculator,
                                 MethodCalculationSelector methodCalculationSelector,
@@ -39,44 +40,17 @@ public class CalculatorController {
         this.methodCalculationSelector = methodCalculationSelector;
         this.finalBolusCalculator = finalBolusCalculator;
         this.bolusFactorCalculator = bolusFactorCalculator;
-
-        // Initialisierung des DatabaseManager, ähnlich wie in der Main-Methode
-        // Dies sollte idealerweise in einer @Configuration-Klasse oder einem Service erfolgen,
-        // um die Controller-Logik sauber zu halten. Für den Anfang ist es hier ok.
-        boolean enableDatabaseStorage = true; // Standardmäßig aktiviert für Web-App, kann über Config gesteuert werden
-
-        // In einer Webanwendung würden Kommandozeilenargumente nicht direkt verwendet.
-        // Die Deaktivierung könnte über eine Spring-Konfigurationseigenschaft erfolgen (z.B. application.properties)
-        // Für dieses Beispiel bleibt es immer true, es sei denn, das Passwort fehlt.
-
-        if (enableDatabaseStorage) {
-            String dbPassword = System.getenv("DB_PASSWORD");
-            if (dbPassword == null || dbPassword.isEmpty()) {
-                System.err.println("WARNUNG: Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Speicherung deaktiviert.");
-                // databaseManagerInitialized bleibt false
-            } else {
-                try {
-                    this.databaseManager = new DatabaseManager(
-                            "jdbc:mysql://localhost:3306/lazycarbs_db",
-                            "lazyuser",
-                            dbPassword
-                    );
-                    this.databaseManagerInitialized = true;
-                } catch (Exception e) {
-                    System.err.println("FEHLER: Konnte DatabaseManager nicht initialisieren: " + e.getMessage());
-                    this.databaseManagerInitialized = false;
-                }
-            }
-        }
     }
 
     /**
      * Verarbeitet POST-Anfragen zur Berechnung des Bolus.
-     * @param request Das Request-Objekt mit allen Eingabedaten.
+     * @param request Das Request-Objekt mit allen Eingabedaten, einschließlich der Option zur Datenbankspeicherung.
      * @return Ein ResponseEntity mit dem Ergebnis der Berechnung und dem HTTP-Status.
      */
     @PostMapping
     public ResponseEntity<CalculationResponse> calculateBolus(@RequestBody CalculationRequest request) {
+        String dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (nicht angefragt)"; // Standardstatus
+
         try {
             // Berechnungen basierend auf der bestehenden Logik
             double usualBolusFactor = bolusFactorCalculator.calculateAverageBolusFactor(request.currentHour(), request.currentMinute(), 120);
@@ -108,30 +82,48 @@ public class CalculatorController {
 
             double finalCorrectBolus = finalBolusCalculator.correctBolusSumAdjustment(methodResults, request.movementFactor());
 
-            // Daten in der Datenbank speichern, falls initialisiert
-            if (databaseManagerInitialized) {
-                try {
-                    databaseManager.saveCalculation(
-                            request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
-                            request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
-                            usualBolusFactor, intermediateBolusFactors,
-                            methodSelection.strategy().getClass().getSimpleName(), methodSelection.explanation(),
-                            methodResults,
-                            request.movementFactor(), finalCorrectBolus
-                    );
-                    System.out.println("Berechnungsdaten erfolgreich in der Datenbank gespeichert.");
-                } catch (SQLException e) {
-                    System.err.println("Fehler beim Speichern der Daten in der Datenbank: " + e.getMessage());
-                    // Fehler beim Speichern sollte die Berechnung nicht abbrechen, nur loggen
-                } finally {
+            // NEU: Daten in der Datenbank speichern, WENN vom Frontend angefordert UND DB initialisierbar ist
+            if (request.enableDatabaseStorage()) { // Prüfe den neuen Request-Parameter
+                String dbPassword = System.getenv("DB_PASSWORD");
+                if (dbPassword == null || dbPassword.isEmpty()) {
+                    System.err.println("WARNUNG: Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Speicherung konnte nicht durchgeführt werden.");
+                    dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (Passwort fehlt)";
+                } else {
+                    DatabaseManager databaseManager = null; // Lokale Instanz
                     try {
-                        if (databaseManager != null) {
-                            databaseManager.closeConnection(); // Verbindung nach jeder Speicherung schließen
-                        }
+                        databaseManager = new DatabaseManager(
+                                "jdbc:mysql://localhost:3306/lazycarbs_db",
+                                "lazyuser",
+                                dbPassword
+                        );
+                        databaseManager.saveCalculation(
+                                request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
+                                request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
+                                usualBolusFactor, intermediateBolusFactors,
+                                methodSelection.strategy().getClass().getSimpleName(), methodSelection.explanation(),
+                                methodResults,
+                                request.movementFactor(), finalCorrectBolus
+                        );
+                        System.out.println("Berechnungsdaten erfolgreich in der Datenbank gespeichert.");
+                        dbStatusMessage = "Datenbank-Speicherung: Erfolgreich";
                     } catch (SQLException e) {
-                        System.err.println("Fehler beim Schließen der Datenbankverbindung: " + e.getMessage());
+                        System.err.println("Fehler beim Speichern der Daten in der Datenbank: " + e.getMessage());
+                        dbStatusMessage = "Datenbank-Speicherung: Fehler (" + e.getMessage() + ")";
+                    } catch (Exception e) { // Auch andere Initialisierungsfehler abfangen
+                        System.err.println("Fehler bei der Datenbank-Initialisierung: " + e.getMessage());
+                        dbStatusMessage = "Datenbank-Speicherung: Fehler bei Initialisierung (" + e.getMessage() + ")";
+                    } finally {
+                        try {
+                            if (databaseManager != null) {
+                                databaseManager.closeConnection(); // Verbindung nach jeder Speicherung schließen
+                            }
+                        } catch (SQLException e) {
+                            System.err.println("Fehler beim Schließen der Datenbankverbindung: " + e.getMessage());
+                        }
                     }
                 }
+            } else {
+                dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (vom Benutzer)";
             }
 
             // Erstelle die Antwort mit allen relevanten Werten
@@ -149,7 +141,7 @@ public class CalculatorController {
                     methodSelection.strategy().getClass().getSimpleName(),
                     methodSelection.explanation(),
                     "Berechnung erfolgreich durchgeführt.",
-                    databaseManagerInitialized ? "Datenbank-Speicherung: Aktiv" : "Datenbank-Speicherung: Deaktiviert"
+                    dbStatusMessage // Verwende die aktualisierte Statusnachricht
             );
             return ResponseEntity.ok(response);
 
@@ -165,7 +157,7 @@ public class CalculatorController {
                             "N/A", // selectedMethodName
                             "N/A", // methodExplanation
                             "Fehler bei der Berechnung: " + e.getMessage(), // statusMessage
-                            "N/A" // dbStatus
+                            dbStatusMessage // Auch hier den dbStatusMessage verwenden
                     ));
         }
     }

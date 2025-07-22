@@ -51,5 +51,5 @@ public record CalculationResponse(
         String selectedMethodName,
         String methodExplanation,
         String statusMessage,
-        String dbStatus
+        String dbStatus // NEU: Feld für den Datenbank-Status
 ) {}
