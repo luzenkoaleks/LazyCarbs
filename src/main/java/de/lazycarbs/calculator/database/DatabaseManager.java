@@ -1,24 +1,25 @@
-
 package de.lazycarbs.calculator.database;
 
 import de.lazycarbs.calculator.data.IntermediateBolusFactors;
 import de.lazycarbs.calculator.data.MethodResults;
 import de.lazycarbs.calculator.data.HourlyBolusFactor;
-import org.slf4j.Logger; // Import für Logger
-import org.slf4j.LoggerFactory; // Import für LoggerFactory
+import de.lazycarbs.calculator.data.CalorieFactors; // NEU: Import für CalorieFactors
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional; // NEU: Import für Optional
 
 /**
  * Verwaltet die Datenbankverbindung und Operationen für den LazyCarbs Rechner.
- * Speichert Berechnungsdaten und verwaltet stündliche Bolusfaktoren.
+ * Speichert Berechnungsdaten und verwaltet stündliche Bolusfaktoren sowie Kalorienfaktoren.
  */
 public class DatabaseManager {
 
-    private static final Logger logger = LoggerFactory.getLogger(DatabaseManager.class); // Logger Instanz
+    private static final Logger logger = LoggerFactory.getLogger(DatabaseManager.class);
 
     private final String DB_URL;
     private final String DB_USER;
@@ -33,14 +34,14 @@ public class DatabaseManager {
 
     private void openConnection() throws SQLException {
         if (connection == null || connection.isClosed()) {
-            logger.debug("Öffne Datenbankverbindung zu {}", DB_URL); // Logging
+            logger.debug("Öffne Datenbankverbindung zu {}", DB_URL);
             connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
         }
     }
 
     public void closeConnection() throws SQLException {
         if (connection != null && !connection.isClosed()) {
-            logger.debug("Schließe Datenbankverbindung."); // Logging
+            logger.debug("Schließe Datenbankverbindung.");
             connection.close();
         }
     }
@@ -91,10 +92,10 @@ public class DatabaseManager {
             pstmt.setDouble(i++, finalCorrectBolus);
 
             pstmt.executeUpdate();
-            logger.info("Berechnung erfolgreich in Datenbank gespeichert."); // Logging
+            logger.info("Berechnung erfolgreich in Datenbank gespeichert.");
         } catch (SQLException e) {
-            logger.error("Fehler beim Speichern der Berechnung in der Datenbank: {}", e.getMessage(), e); // Logging
-            throw e; // Exception weiter werfen, damit der Controller sie behandeln kann
+            logger.error("Fehler beim Speichern der Berechnung in der Datenbank: {}", e.getMessage(), e);
+            throw e;
         } finally {
             closeConnection();
         }
@@ -110,9 +111,9 @@ public class DatabaseManager {
             while (rs.next()) {
                 factors.add(new HourlyBolusFactor(rs.getInt("hour"), rs.getDouble("bolus_factor")));
             }
-            logger.info("Stündliche Bolusfaktoren erfolgreich aus der Datenbank geladen."); // Logging
+            logger.info("Stündliche Bolusfaktoren erfolgreich aus der Datenbank geladen.");
         } catch (SQLException e) {
-            logger.error("Fehler beim Laden der stündlichen Bolusfaktoren aus der Datenbank: {}", e.getMessage(), e); // Logging
+            logger.error("Fehler beim Laden der stündlichen Bolusfaktoren aus der Datenbank: {}", e.getMessage(), e);
             throw e;
         } finally {
             closeConnection();
@@ -129,9 +130,9 @@ public class DatabaseManager {
             pstmt.setInt(1, hour);
             pstmt.setDouble(2, bolusFactor);
             pstmt.executeUpdate();
-            logger.info("Bolusfaktor für Stunde {} erfolgreich in Datenbank aktualisiert auf {}.", hour, bolusFactor); // Logging
+            logger.info("Bolusfaktor für Stunde {} erfolgreich in Datenbank aktualisiert auf {}.", hour, bolusFactor);
         } catch (SQLException e) {
-            logger.error("Fehler beim Aktualisieren des Bolusfaktors für Stunde {}: {}", hour, e.getMessage(), e); // Logging
+            logger.error("Fehler beim Aktualisieren des Bolusfaktors für Stunde {}: {}", hour, e.getMessage(), e);
             throw e;
         } finally {
             closeConnection();
@@ -152,13 +153,107 @@ public class DatabaseManager {
                         pstmt.addBatch();
                     }
                     pstmt.executeBatch();
-                    logger.info("hourly_bolus_factors Tabelle mit Standardwerten initialisiert."); // Logging
+                    logger.info("hourly_bolus_factors Tabelle mit Standardwerten initialisiert.");
                 }
             } else {
-                logger.info("hourly_bolus_factors Tabelle ist bereits befüllt, keine Initialisierung notwendig."); // Logging
+                logger.info("hourly_bolus_factors Tabelle ist bereits befüllt, keine Initialisierung notwendig.");
             }
         } catch (SQLException e) {
-            logger.error("Fehler beim Initialisieren der hourly_bolus_factors Tabelle: {}", e.getMessage(), e); // Logging
+            logger.error("Fehler beim Initialisieren der hourly_bolus_factors Tabelle: {}", e.getMessage(), e);
+            throw e;
+        } finally {
+            closeConnection();
+        }
+    }
+
+    /**
+     * Ruft die Kalorienfaktoren aus der Datenbank ab.
+     * Es wird erwartet, dass nur ein Datensatz in der Tabelle 'calorie_factors' existiert.
+     * @return Ein Optional, das die CalorieFactors enthält, falls vorhanden, ansonsten leer.
+     * @throws SQLException falls ein Datenbankfehler auftritt.
+     */
+    public Optional<CalorieFactors> getCalorieFactors() throws SQLException {
+        openConnection();
+        String sql = "SELECT usual_be_calories, insulin_type_calorie_covering FROM calorie_factors LIMIT 1";
+        Optional<CalorieFactors> factors = Optional.empty();
+
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                factors = Optional.of(new CalorieFactors(
+                        rs.getDouble("usual_be_calories"),
+                        rs.getDouble("insulin_type_calorie_covering")
+                ));
+                logger.info("Kalorienfaktoren erfolgreich aus der Datenbank geladen.");
+            } else {
+                logger.warn("Keine Kalorienfaktoren in der Datenbank gefunden. Tabelle 'calorie_factors' ist leer.");
+            }
+        } catch (SQLException e) {
+            logger.error("Fehler beim Laden der Kalorienfaktoren aus der Datenbank: {}", e.getMessage(), e);
+            throw e;
+        } finally {
+            closeConnection();
+        }
+        return factors;
+    }
+
+    /**
+     * Aktualisiert die Kalorienfaktoren in der Datenbank.
+     * Es wird erwartet, dass nur ein Datensatz aktualisiert wird (ID 1).
+     * @param usualBeCalories Der neue Wert für übliche Kalorien pro BE.
+     * @param insulinTypeCalorieCovering Der neue Wert für die Insulin-Typ-Kalorienabdeckung.
+     * @throws SQLException falls ein Datenbankfehler auftritt.
+     */
+    public void updateCalorieFactors(double usualBeCalories, double insulinTypeCalorieCovering) throws SQLException {
+        openConnection();
+        // Wir aktualisieren den Datensatz mit ID 1, da wir nur einen erwarten.
+        // Wenn kein Datensatz mit ID 1 existiert, wird nichts aktualisiert.
+        String sql = "INSERT INTO calorie_factors (id, usual_be_calories, insulin_type_calorie_covering) VALUES (1, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE usual_be_calories = VALUES(usual_be_calories), " +
+                "insulin_type_calorie_covering = VALUES(insulin_type_calorie_covering), updated_at = CURRENT_TIMESTAMP";
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setDouble(1, usualBeCalories);
+            pstmt.setDouble(2, insulinTypeCalorieCovering);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logger.info("Kalorienfaktoren erfolgreich in Datenbank aktualisiert: usualBeCalories={}, insulinTypeCalorieCovering={}", usualBeCalories, insulinTypeCalorieCovering);
+            } else {
+                logger.warn("Kein Datensatz mit ID 1 in 'calorie_factors' gefunden oder aktualisiert.");
+            }
+        } catch (SQLException e) {
+            logger.error("Fehler beim Aktualisieren der Kalorienfaktoren: {}", e.getMessage(), e);
+            throw e;
+        } finally {
+            closeConnection();
+        }
+    }
+
+    /**
+     * Initialisiert die calorie_factors Tabelle mit Standardwerten,
+     * falls sie leer ist. Dies sollte nur einmalig beim ersten Start erfolgen.
+     * @param defaultUsualBeCalories Der Standardwert für usualBeCalories.
+     * @param defaultInsulinTypeCalorieCovering Der Standardwert für insulinTypeCalorieCovering.
+     * @throws SQLException falls ein Datenbankfehler auftritt.
+     */
+    public void initializeCalorieFactors(double defaultUsualBeCalories, double defaultInsulinTypeCalorieCovering) throws SQLException {
+        openConnection();
+        String checkSql = "SELECT COUNT(*) FROM calorie_factors";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(checkSql)) {
+            if (rs.next() && rs.getInt(1) == 0) { // Wenn die Tabelle leer ist
+                String insertSql = "INSERT INTO calorie_factors (id, usual_be_calories, insulin_type_calorie_covering) VALUES (1, ?, ?)";
+                try (PreparedStatement pstmt = connection.prepareStatement(insertSql)) {
+                    pstmt.setDouble(1, defaultUsualBeCalories);
+                    pstmt.setDouble(2, defaultInsulinTypeCalorieCovering);
+                    pstmt.executeUpdate();
+                    logger.info("calorie_factors Tabelle mit Standardwerten initialisiert.");
+                }
+            } else {
+                logger.info("calorie_factors Tabelle ist bereits befüllt, keine Initialisierung notwendig.");
+            }
+        } catch (SQLException e) {
+            logger.error("Fehler beim Initialisieren der calorie_factors Tabelle: {}", e.getMessage(), e);
             throw e;
         } finally {
             closeConnection();

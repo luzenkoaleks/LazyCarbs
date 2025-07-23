@@ -3,17 +3,19 @@ package de.lazycarbs.calculator.config;
 import de.lazycarbs.calculator.core.FinalBolusCalculator;
 import de.lazycarbs.calculator.core.IntermediateFactorCalculator;
 import de.lazycarbs.calculator.core.MethodCalculationSelector;
-import de.lazycarbs.calculator.data.HourlyBolusFactor; // NEU: Import für HourlyBolusFactor
-import de.lazycarbs.calculator.database.DatabaseManager; // NEU: Import für DatabaseManager
+import de.lazycarbs.calculator.data.HourlyBolusFactor;
+import de.lazycarbs.calculator.database.DatabaseManager;
 import de.lazycarbs.calculator.util.BolusFactorCalculator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.event.ContextRefreshedEvent; // NEU: Import für Event Listener
-import org.springframework.context.event.EventListener; // NEU: Import für Event Listener
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
+import org.slf4j.Logger; // NEU: Import für Logger
+import org.slf4j.LoggerFactory; // NEU: Import für LoggerFactory
 
 import java.sql.SQLException;
-import java.util.ArrayList; // NEU: Import für ArrayList
-import java.util.List;      // NEU: Import für List
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Spring-Konfigurationsklasse zum Definieren von Beans.
@@ -23,6 +25,8 @@ import java.util.List;      // NEU: Import für List
 @Configuration
 public class AppConfig {
 
+    private static final Logger logger = LoggerFactory.getLogger(AppConfig.class); // NEU: Logger Instanz
+
     // Standardwerte für die stündlichen Bolusfaktoren,
     // die verwendet werden, wenn die Datenbanktabelle leer ist.
     private static final double[] DEFAULT_HOURLY_FACTORS = {
@@ -31,6 +35,10 @@ public class AppConfig {
             1.02, 0.81, 0.81, 0.81, 0.81, 0.81, // 12-17 Uhr
             0.81, 1.01, 1.01, 1.01, 1.01, 1.01  // 18-23 Uhr
     };
+
+    // NEU: Standardwerte für Kalorienfaktoren
+    private static final double DEFAULT_USUAL_BE_CALORIES = 105.0;
+    private static final double DEFAULT_INSULIN_TYPE_CALORIE_COVERING = 200.0;
 
     @Bean
     public IntermediateFactorCalculator intermediateFactorCalculator() {
@@ -47,12 +55,12 @@ public class AppConfig {
         return new FinalBolusCalculator();
     }
 
-    // NEU: DatabaseManager als Spring Bean definieren
+    // DatabaseManager als Spring Bean definieren
     @Bean
     public DatabaseManager databaseManager() {
         String dbPassword = System.getenv("DB_PASSWORD");
         if (dbPassword == null || dbPassword.isEmpty()) {
-            System.err.println("WARNUNG: Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Zugriff für DatabaseManager eingeschränkt.");
+            logger.warn("Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Zugriff für DatabaseManager eingeschränkt.");
             // Gibt einen DatabaseManager zurück, der aber keine Verbindung aufbauen kann,
             // wenn das Passwort fehlt. Die Methoden im DatabaseManager selbst prüfen dies.
             return new DatabaseManager("jdbc:mysql://localhost:3306/lazycarbs_db", "lazyuser", ""); // Leeres Passwort, wird fehlschlagen
@@ -64,7 +72,7 @@ public class AppConfig {
         );
     }
 
-    // NEU: BolusFactorCalculator als Spring Bean definieren und DatabaseManager injizieren
+    // BolusFactorCalculator als Spring Bean definieren und DatabaseManager injizieren
     @Bean
     public BolusFactorCalculator bolusFactorCalculator(DatabaseManager databaseManager) {
         return new BolusFactorCalculator(databaseManager);
@@ -72,21 +80,26 @@ public class AppConfig {
 
     /**
      * Event Listener, der auf das Ende der Spring-Anwendungsinitialisierung wartet.
-     * Wird verwendet, um die 'hourly_bolus_factors'-Tabelle mit Standardwerten zu initialisieren,
-     * falls sie leer ist.
+     * Wird verwendet, um die 'hourly_bolus_factors'-Tabelle und die 'calorie_factors'-Tabelle
+     * mit Standardwerten zu initialisieren, falls sie leer sind.
      * @param event Das ContextRefreshedEvent.
      */
     @EventListener
     public void onApplicationEvent(ContextRefreshedEvent event) {
         DatabaseManager dbManager = event.getApplicationContext().getBean(DatabaseManager.class);
         try {
+            // Initialisiere stündliche Bolusfaktoren
             List<HourlyBolusFactor> defaultFactorsList = new ArrayList<>();
             for (int i = 0; i < DEFAULT_HOURLY_FACTORS.length; i++) {
                 defaultFactorsList.add(new HourlyBolusFactor(i, DEFAULT_HOURLY_FACTORS[i]));
             }
             dbManager.initializeHourlyBolusFactors(defaultFactorsList);
+
+            // NEU: Initialisiere Kalorienfaktoren
+            dbManager.initializeCalorieFactors(DEFAULT_USUAL_BE_CALORIES, DEFAULT_INSULIN_TYPE_CALORIE_COVERING);
+
         } catch (SQLException e) {
-            System.err.println("FEHLER beim Initialisieren der stündlichen Bolusfaktoren in der Datenbank: " + e.getMessage());
+            logger.error("FEHLER beim Initialisieren der Datenbanktabellen (Bolusfaktoren oder Kalorienfaktoren): {}", e.getMessage(), e);
         }
     }
 }
