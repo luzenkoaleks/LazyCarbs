@@ -1,3 +1,4 @@
+// START: src/main/java/de/lazycarbs/calculator/controller/CalculatorController.java
 package de.lazycarbs.calculator.controller;
 
 import de.lazycarbs.calculator.core.FinalBolusCalculator;
@@ -9,16 +10,18 @@ import de.lazycarbs.calculator.data.MethodSelectionResult;
 import de.lazycarbs.calculator.database.DatabaseManager;
 import de.lazycarbs.calculator.util.BolusFactorCalculator;
 import de.lazycarbs.calculator.data.HourlyBolusFactor;
-import de.lazycarbs.calculator.data.CalorieFactors; // NEU: Import für CalorieFactors
+import de.lazycarbs.calculator.data.CalorieFactors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Optional; // NEU: Import für Optional
+import java.util.Optional;
 
 /**
  * REST-Controller für den LazyCarbs Rechner.
@@ -31,6 +34,10 @@ import java.util.Optional; // NEU: Import für Optional
 public class CalculatorController {
 
     private static final Logger logger = LoggerFactory.getLogger(CalculatorController.class);
+
+    // Der geheime API-Key, geladen aus application.properties oder Umgebungsvariablen
+    @Value("${api.key.secret}")
+    private String apiSecretKey;
 
     private final IntermediateFactorCalculator intermediateFactorCalculator;
     private final MethodCalculationSelector methodCalculationSelector;
@@ -53,21 +60,39 @@ public class CalculatorController {
     /**
      * Verarbeitet POST-Anfragen zur Berechnung des Bolus.
      * Endpunkt: /api/calculate
-     * @param request Das Request-Objekt mit allen Eingabedaten, einschließlich der Option zur Datenbankspeicherung.
+     * @param requestBody Das Request-Objekt mit allen Eingabedaten, einschließlich der Option zur Datenbankspeicherung.
+     * @param httpRequest Das HttpServletRequest-Objekt, um Header auszulesen.
      * @return Ein ResponseEntity mit dem Ergebnis der Berechnung und dem HTTP-Status.
      */
     @PostMapping("/calculate")
-    public ResponseEntity<CalculationResponse> calculateBolus(@RequestBody CalculationRequest request) {
+    public ResponseEntity<CalculationResponse> calculateBolus(@RequestBody CalculationRequest requestBody, HttpServletRequest httpRequest) {
         String dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (nicht angefragt)";
 
         try {
-            double usualBolusFactor = bolusFactorCalculator.calculateAverageBolusFactor(request.currentHour(), request.currentMinute(), 120);
+            // Prüfe, ob der API-Key im Backend konfiguriert ist
+            if (apiSecretKey == null || apiSecretKey.isEmpty()) {
+                logger.error("API Secret Key ist im Backend nicht konfiguriert. Kann API-Key-Validierung nicht durchführen.");
+                // Wenn der Server-API-Key nicht konfiguriert ist, kann keine Speicherung erfolgen
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(new CalculationResponse(
+                                0.0, 0.0, 0.0, 0.0, 0, 0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0,
+                                "N/A",
+                                "N/A",
+                                "Fehler: Server-API-Key nicht konfiguriert.",
+                                "N/A"
+                        ));
+            }
+
+            double usualBolusFactor = bolusFactorCalculator.calculateAverageBolusFactor(requestBody.currentHour(), requestBody.currentMinute(), 120);
 
             IntermediateBolusFactors intermediateBolusFactors = intermediateFactorCalculator.calculateIntermediateBolusFactors(
-                    request.mealCarbs(), request.mealCalories(), usualBolusFactor, request.usualBeCalories());
+                    requestBody.mealCarbs(), requestBody.mealCalories(), usualBolusFactor, requestBody.usualBeCalories());
 
             MethodSelectionResult methodSelection = methodCalculationSelector.selectStrategy(
-                    request.mealCarbs(), request.usualBeCalories(), intermediateBolusFactors);
+                    requestBody.mealCarbs(), requestBody.usualBeCalories(), intermediateBolusFactors);
 
             if (methodSelection.strategy() == null) {
                 logger.error("Keine Berechnungsmethode ausgewählt: {}", methodSelection.explanation());
@@ -85,25 +110,44 @@ public class CalculatorController {
             }
 
             MethodResults methodResults = methodSelection.strategy().calculate(
-                    request.mealCarbs(), request.mealCalories(), usualBolusFactor, request.usualBeCalories(),
-                    request.insulinTypeCalorieCovering(), intermediateBolusFactors);
+                    requestBody.mealCarbs(), requestBody.mealCalories(), usualBolusFactor, requestBody.usualBeCalories(),
+                    requestBody.insulinTypeCalorieCovering(), intermediateBolusFactors);
 
-            double finalCorrectBolus = finalBolusCalculator.correctBolusSumAdjustment(methodResults, request.movementFactor());
+            double finalCorrectBolus = finalBolusCalculator.correctBolusSumAdjustment(methodResults, requestBody.movementFactor());
 
-            if (request.enableDatabaseStorage()) {
-                String dbPassword = System.getenv("DB_PASSWORD");
-                if (dbPassword == null || dbPassword.isEmpty()) {
-                    logger.warn("Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Speicherung konnte nicht durchgeführt werden.");
-                    dbStatusMessage = "Datenbank-Speicherung: Deaktiviert (Passwort fehlt)";
+            // NEU: API-Key-Prüfung für die Datenbank-Speicherung mit Rückgabe von 401
+            if (requestBody.enableDatabaseStorage()) {
+                String requestApiKey = httpRequest.getHeader("X-API-Key"); // Lese den API-Key aus dem Header
+
+                if (requestApiKey == null || !requestApiKey.equals(apiSecretKey)) {
+                    logger.warn("Ungültiger oder fehlender API-Key für Datenbank-Speicherung von IP: {}", httpRequest.getRemoteAddr());
+                    // WICHTIG: Hier geben wir jetzt einen 401 Unauthorized Status zurück!
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                            .body(new CalculationResponse(
+                                    requestBody.mealCarbs(), requestBody.mealCalories(), requestBody.usualBeCalories(),
+                                    requestBody.insulinTypeCalorieCovering(), requestBody.currentHour(), requestBody.currentMinute(),
+                                    usualBolusFactor,
+                                    intermediateBolusFactors.leanBeFactor(), intermediateBolusFactors.pureCarbBeFactor(),
+                                    intermediateBolusFactors.beSum(), intermediateBolusFactors.beCalories(),
+                                    intermediateBolusFactors.fatProteinCalories(),
+                                    methodResults.correctBeFactor(), methodResults.calorieSurplus(),
+                                    methodResults.delayedCalorieBolus(), methodResults.correctBolusSum(),
+                                    methodResults.fatProteinCalories(),
+                                    requestBody.movementFactor(), finalCorrectBolus,
+                                    methodSelection.strategy().getClass().getSimpleName(),
+                                    methodSelection.explanation(),
+                                    "Berechnung erfolgreich, aber Speicherung fehlgeschlagen.", // Status für Frontend
+                                    "Datenbank-Speicherung: Fehlgeschlagen (Ungültiger/Fehlender API-Key)"
+                            ));
                 } else {
                     try {
                         databaseManager.saveCalculation(
-                                request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
-                                request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
+                                requestBody.mealCarbs(), requestBody.mealCalories(), requestBody.usualBeCalories(),
+                                requestBody.insulinTypeCalorieCovering(), requestBody.currentHour(), requestBody.currentMinute(),
                                 usualBolusFactor, intermediateBolusFactors,
                                 methodSelection.strategy().getClass().getSimpleName(), methodSelection.explanation(),
                                 methodResults,
-                                request.movementFactor(), finalCorrectBolus
+                                requestBody.movementFactor(), finalCorrectBolus
                         );
                         logger.info("Berechnungsdaten erfolgreich in der Datenbank gespeichert.");
                         dbStatusMessage = "Datenbank-Speicherung: Erfolgreich";
@@ -120,8 +164,8 @@ public class CalculatorController {
             }
 
             CalculationResponse response = new CalculationResponse(
-                    request.mealCarbs(), request.mealCalories(), request.usualBeCalories(),
-                    request.insulinTypeCalorieCovering(), request.currentHour(), request.currentMinute(),
+                    requestBody.mealCarbs(), requestBody.mealCalories(), requestBody.usualBeCalories(),
+                    requestBody.insulinTypeCalorieCovering(), requestBody.currentHour(), requestBody.currentMinute(),
                     usualBolusFactor,
                     intermediateBolusFactors.leanBeFactor(), intermediateBolusFactors.pureCarbBeFactor(),
                     intermediateBolusFactors.beSum(), intermediateBolusFactors.beCalories(),
@@ -129,7 +173,7 @@ public class CalculatorController {
                     methodResults.correctBeFactor(), methodResults.calorieSurplus(),
                     methodResults.delayedCalorieBolus(), methodResults.correctBolusSum(),
                     methodResults.fatProteinCalories(),
-                    request.movementFactor(), finalCorrectBolus,
+                    requestBody.movementFactor(), finalCorrectBolus,
                     methodSelection.strategy().getClass().getSimpleName(),
                     methodSelection.explanation(),
                     "Berechnung erfolgreich durchgeführt.",
@@ -139,6 +183,7 @@ public class CalculatorController {
 
         } catch (Exception e) {
             logger.error("Fehler bei der Bolus-Berechnung: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new CalculationResponse(
                             0.0, 0.0, 0.0, 0.0, 0, 0,
@@ -148,7 +193,7 @@ public class CalculatorController {
                             "N/A",
                             "N/A",
                             "Fehler bei der Berechnung: " + e.getMessage(),
-                            dbStatusMessage
+                            dbStatusMessage // Hier den letzten bekannten Status oder "Fehler" setzen
                     ));
         }
     }
@@ -239,6 +284,7 @@ public class CalculatorController {
         }
         try {
             databaseManager.updateCalorieFactors(factors.usualBeCalories(), factors.insulinTypeCalorieCovering());
+            // KORREKTUR: Zugriff auf Record-Felder über Accessor-Methoden
             logger.info("Kalorienfaktoren erfolgreich aktualisiert auf: usualBeCalories={}, insulinTypeCalorieCovering={}", factors.usualBeCalories(), factors.insulinTypeCalorieCovering());
             return ResponseEntity.ok("Kalorienfaktoren erfolgreich aktualisiert.");
         } catch (SQLException e) {
