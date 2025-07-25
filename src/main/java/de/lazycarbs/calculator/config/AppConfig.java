@@ -1,3 +1,4 @@
+// START: src/main/java/de/lazycarbs/calculator/config/AppConfig.java
 package de.lazycarbs.calculator.config;
 
 import de.lazycarbs.calculator.core.FinalBolusCalculator;
@@ -10,8 +11,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
-import org.slf4j.Logger; // NEU: Import für Logger
-import org.slf4j.LoggerFactory; // NEU: Import für LoggerFactory
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -25,7 +26,7 @@ import java.util.List;
 @Configuration
 public class AppConfig {
 
-    private static final Logger logger = LoggerFactory.getLogger(AppConfig.class); // NEU: Logger Instanz
+    private static final Logger logger = LoggerFactory.getLogger(AppConfig.class);
 
     // Standardwerte für die stündlichen Bolusfaktoren,
     // die verwendet werden, wenn die Datenbanktabelle leer ist.
@@ -36,9 +37,43 @@ public class AppConfig {
             0.81, 1.01, 1.01, 1.01, 1.01, 1.01  // 18-23 Uhr
     };
 
-    // NEU: Standardwerte für Kalorienfaktoren
+    // Standardwerte für Kalorienfaktoren
     private static final double DEFAULT_USUAL_BE_CALORIES = 105.0;
     private static final double DEFAULT_INSULIN_TYPE_CALORIE_COVERING = 200.0;
+
+    // DatabaseManager als Spring Bean definieren
+    @Bean
+    public DatabaseManager databaseManager() {
+        // Alle Datenbankparameter aus Umgebungsvariablen lesen
+        String dbUrl = System.getenv("DATABASE_URL");
+        String dbUser = System.getenv("MYSQL_USER");
+        String dbPassword = System.getenv("MYSQL_PASSWORD");
+
+        // Validierung der Umgebungsvariablen
+        if (dbUrl == null || dbUrl.isEmpty()) {
+            logger.error("FEHLER: DATABASE_URL ist nicht als Umgebungsvariable gesetzt. Datenbank-Zugriff wird fehlschlagen.");
+            return new DatabaseManager("jdbc:mysql://invalid:3306/invalid_db", "invalid_user", ""); // Ungültige Werte, um sofortigen Fehler zu zeigen
+        }
+
+        if (dbUser == null || dbUser.isEmpty()) {
+            logger.error("FEHLER: MYSQL_USER ist nicht als Umgebungsvariable gesetzt. Datenbank-Zugriff wird fehlschlagen.");
+            return new DatabaseManager("jdbc:mysql://invalid:3306/invalid_db", "invalid_user", ""); // Ungültige Werte, um sofortigen Fehler zu zeigen
+        }
+
+        if (dbPassword == null || dbPassword.isEmpty()) {
+            logger.error("FEHLER: MYSQL_PASSWORD ist nicht als Umgebungsvariable gesetzt. Datenbank-Zugriff wird fehlschlagen.");
+            return new DatabaseManager("jdbc:mysql://invalid:3306/invalid_db", "invalid_user", ""); // Ungültige Werte, um sofortigen Fehler zu zeigen
+        }
+
+        // DATABASE_URL von mysql:// zu jdbc:mysql:// konvertieren falls nötig (wichtig für Railway)
+        if (dbUrl.startsWith("mysql://")) {
+            dbUrl = dbUrl.replace("mysql://", "jdbc:mysql://");
+        }
+
+        logger.info("DatabaseManager konfiguriert mit URL: {}, User: {}", dbUrl, dbUser);
+
+        return new DatabaseManager(dbUrl, dbUser, dbPassword);
+    }
 
     @Bean
     public IntermediateFactorCalculator intermediateFactorCalculator() {
@@ -53,23 +88,6 @@ public class AppConfig {
     @Bean
     public FinalBolusCalculator finalBolusCalculator() {
         return new FinalBolusCalculator();
-    }
-
-    // DatabaseManager als Spring Bean definieren
-    @Bean
-    public DatabaseManager databaseManager() {
-        String dbPassword = System.getenv("DB_PASSWORD");
-        if (dbPassword == null || dbPassword.isEmpty()) {
-            logger.warn("Datenbankpasswort nicht als Umgebungsvariable 'DB_PASSWORD' gesetzt. Datenbank-Zugriff für DatabaseManager eingeschränkt.");
-            // Gibt einen DatabaseManager zurück, der aber keine Verbindung aufbauen kann,
-            // wenn das Passwort fehlt. Die Methoden im DatabaseManager selbst prüfen dies.
-            return new DatabaseManager("jdbc:mysql://localhost:3306/lazycarbs_db", "lazyuser", ""); // Leeres Passwort, wird fehlschlagen
-        }
-        return new DatabaseManager(
-                "jdbc:mysql://localhost:3306/lazycarbs_db",
-                "lazyuser",
-                dbPassword
-        );
     }
 
     // BolusFactorCalculator als Spring Bean definieren und DatabaseManager injizieren
@@ -95,7 +113,7 @@ public class AppConfig {
             }
             dbManager.initializeHourlyBolusFactors(defaultFactorsList);
 
-            // NEU: Initialisiere Kalorienfaktoren
+            // Initialisiere Kalorienfaktoren
             dbManager.initializeCalorieFactors(DEFAULT_USUAL_BE_CALORIES, DEFAULT_INSULIN_TYPE_CALORIE_COVERING);
 
         } catch (SQLException e) {
