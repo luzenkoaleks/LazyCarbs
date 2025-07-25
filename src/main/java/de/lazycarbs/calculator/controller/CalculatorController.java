@@ -30,7 +30,8 @@ import java.util.Optional;
  */
 @RestController
 @RequestMapping("/api") // Basis-Pfad für alle Endpunkte in diesem Controller
-@CrossOrigin(origins = "http://localhost:5173") // CORS-Konfiguration
+@CrossOrigin(origins = {"http://localhost:5173", "https://iridescent-semifreddo-01e3ae.netlify.app"}) // CORS-Konfiguration
+
 public class CalculatorController {
 
     private static final Logger logger = LoggerFactory.getLogger(CalculatorController.class);
