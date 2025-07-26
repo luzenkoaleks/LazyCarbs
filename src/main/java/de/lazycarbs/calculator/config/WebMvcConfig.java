@@ -4,6 +4,7 @@ package de.lazycarbs.calculator.config;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 
 /**
  * Spring MVC Konfigurationsklasse zum Registrieren des ApiKeyAuthInterceptor.
@@ -34,5 +35,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/bolus-factors/**", "/api/calorie-factors/**");
         // Der Interceptor prüft intern, ob es sich um eine PUT-Anfrage handelt.
         // POST /api/calculate wird im CalculatorController selbst behandelt.
+    }
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOrigins(
+                        "http://localhost:5173",
+                        "https://iridescent-semifreddo-01e3ae.netlify.app",
+                        "https://lazycarbs.netlify.app",
+                        "https://lazycarbs-production.up.railway.app"
+                )
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*");
     }
 }
