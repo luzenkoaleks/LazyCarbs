@@ -36,6 +36,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // Der Interceptor prüft intern, ob es sich um eine PUT-Anfrage handelt.
         // POST /api/calculate wird im CalculatorController selbst behandelt.
     }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
@@ -43,9 +44,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "http://localhost:5173",
                         "https://iridescent-semifreddo-01e3ae.netlify.app",
                         "https://lazycarbs.netlify.app",
-                        "https://lazycarbs-production.up.railway.app"
+                        "https://lazycarbs-production.up.railway.app",
+                        "https://lazycarbs.com",              // Neuer Ursprung
+                        "https://www.lazycarbs.com"          // Neuer Ursprung für www
                 )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
     }
 }
+// END: src/main/java/de/lazycarbs/calculator/config/WebMvcConfig.java
