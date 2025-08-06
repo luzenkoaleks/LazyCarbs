@@ -21,7 +21,7 @@ public class MethodBSupersize implements CalculationStrategy{
             double overhangingBe = intermediateBolusFactors.beSum() - 7.5;
             calorieSurplus = (mealCalories - (intermediateBolusFactors.beCalories() * 7.5)) - (overhangingBe * 50);
             correctBolusSum = (correctBeFactor * 7.5) + (overhangingBe * intermediateBolusFactors.pureCarbBeFactor());
-            delayedCalorieBolus = (calorieSurplus / 200) * intermediateBolusFactors.leanBeFactor();
+            delayedCalorieBolus = (calorieSurplus / insulinTypeCalorieCovering) * intermediateBolusFactors.leanBeFactor();
 
         }
         else if(intermediateBolusFactors.beCalories() > insulinTypeCalorieCovering) {
@@ -29,7 +29,7 @@ public class MethodBSupersize implements CalculationStrategy{
             double overhangingBe = intermediateBolusFactors.beSum() - 7.5;
             calorieSurplus = (mealCalories - (insulinTypeCalorieCovering * 7.5)) - (overhangingBe * 50);
             correctBolusSum = (correctBeFactor * 7.5) + (overhangingBe * intermediateBolusFactors.pureCarbBeFactor());
-            delayedCalorieBolus = (calorieSurplus / 200) * intermediateBolusFactors.leanBeFactor();
+            delayedCalorieBolus = (calorieSurplus / insulinTypeCalorieCovering) * intermediateBolusFactors.leanBeFactor();
         }
         return new MethodResults(correctBeFactor, calorieSurplus, delayedCalorieBolus, correctBolusSum, fatProteinCalories);
     }

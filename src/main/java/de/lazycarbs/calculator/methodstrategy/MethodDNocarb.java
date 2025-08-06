@@ -11,7 +11,7 @@ public class MethodDNocarb implements CalculationStrategy{
         // double correctBeFactor, double calorieSurplus, double delayedCalorieBolus, double correctBolusSum
         double correctBeFactor = 0.0;
         double calorieSurplus = 0.0;
-        double delayedCalorieBolus = (mealCalories / 200) * intermediateBolusFactors.leanBeFactor(); // delayed over 8 hours
+        double delayedCalorieBolus = (mealCalories / insulinTypeCalorieCovering) * intermediateBolusFactors.leanBeFactor(); // delayed over 8 hours
         double correctBolusSum = 0.0;
         double fatProteinCalories = intermediateBolusFactors.fatProteinCalories();
 

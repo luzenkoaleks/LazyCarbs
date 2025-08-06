@@ -25,7 +25,7 @@ public class MethodACalorieSurplus implements CalculationStrategy{
         else if(intermediateBolusFactors.beCalories() > insulinTypeCalorieCovering) {
             correctBeFactor = ((insulinTypeCalorieCovering + 100) / (usualBeCalories + 100)) * usualBolusFactor;
             calorieSurplus = mealCalories - (insulinTypeCalorieCovering * intermediateBolusFactors.beSum());
-            delayedCalorieBolus =  (calorieSurplus / 200) * intermediateBolusFactors.leanBeFactor();
+            delayedCalorieBolus =  (calorieSurplus / insulinTypeCalorieCovering) * intermediateBolusFactors.leanBeFactor();
             correctBolusSum = correctBeFactor * intermediateBolusFactors.beSum();
         }
         return new MethodResults(correctBeFactor, calorieSurplus, delayedCalorieBolus, correctBolusSum, fatProteinCalories);
